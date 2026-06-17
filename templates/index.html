@@ -434,7 +434,7 @@
             fd.append('password', form.password.value);
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
+            const timeoutId = setTimeout(() => controller.abort(), 180000);
 
             const resp = await fetch('/api/embed', {
                 method: 'POST',
@@ -478,7 +478,7 @@
             );
         } catch (err) {
             if (err.name === 'AbortError') {
-                showResult('embed-result', 'error', '❌ 请求超时（2分钟），请使用更小的图片重试');
+                showResult('embed-result', 'error', '❌ 请求超时。Render 免费实例冷启动较慢，请刷新页面后立即重试（服务已唤醒，第二次会很快）');
             } else {
                 showResult('embed-result', 'error', '❌ 网络错误: ' + err.message);
             }
