@@ -73,6 +73,14 @@ def api_embed():
     if img is None:
         return jsonify(error='图片读取失败，请检查文件'), 400
 
+    # 大图缩放：SVD 运算复杂度高，大图会超时
+    h, w = img.shape[:2]
+    max_dim = 1024
+    if max(h, w) > max_dim:
+        scale = max_dim / max(h, w)
+        new_w, new_h = int(w * scale), int(h * scale)
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
     # 嵌入水印
     try:
         bwm = WaterMark(password_wm=password, password_img=password)
