@@ -383,6 +383,29 @@
         el.innerHTML = html;
     }
 
+    // ── 图片压缩 ──
+    function compressImage(file, maxSize) {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                if (w > maxSize || h > maxSize) {
+                    const ratio = Math.min(maxSize / w, maxSize / h);
+                    w = Math.round(w * ratio);
+                    h = Math.round(h * ratio);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => {
+                    resolve(new File([blob], file.name, { type: 'image/png' }));
+                }, 'image/png');
+            };
+            img.src = URL.createObjectURL(file);
+        });
+    }
+
     // ── 嵌入水印 ──
     document.getElementById('embed-form').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -398,15 +421,41 @@
         showResult('embed-result', '', '');
 
         try {
-            const resp = await fetch('/api/embed', { method: 'POST', body: fd });
+            // 大图压缩：超过 2MB 时先缩小
+            let uploadFile = file;
+            if (file.size > 2 * 1024 * 1024) {
+                showResult('embed-result', '', '<div style="color:var(--text-muted)">⏳ 图片较大，正在压缩...</div>');
+                uploadFile = await compressImage(file, 1920);
+            }
 
-            if (!resp.ok) {
-                const err = await resp.json();
-                showResult('embed-result', 'error', '❌ ' + (err.error || '未知错误'));
+            const fd = new FormData();
+            fd.append('image', uploadFile);
+            fd.append('watermark', form.watermark.value);
+            fd.append('password', form.password.value);
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+            const resp = await fetch('/api/embed', {
+                method: 'POST',
+                body: fd,
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            const text = await resp.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                showResult('embed-result', 'error', '❌ 服务器返回异常（可能超时），请稍后重试或使用更小的图片');
                 return;
             }
 
-            const data = await resp.json();
+            if (!resp.ok) {
+                showResult('embed-result', 'error', '❌ ' + (data.error || '未知错误'));
+                return;
+            }
 
             // 下载图片（base64 -> blob -> download）
             const byteChars = atob(data.image);
@@ -428,7 +477,11 @@
                  </div>`
             );
         } catch (err) {
-            showResult('embed-result', 'error', '❌ 网络错误: ' + err.message);
+            if (err.name === 'AbortError') {
+                showResult('embed-result', 'error', '❌ 请求超时（2分钟），请使用更小的图片重试');
+            } else {
+                showResult('embed-result', 'error', '❌ 网络错误: ' + err.message);
+            }
         } finally {
             setLoading(btn, false);
         }
