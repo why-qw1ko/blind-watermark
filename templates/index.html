@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>盲水印工具 - Blind Watermark</title>
+    <title>盲水印工具</title>
     <style>
         :root {
             --bg: #0f1117;
@@ -37,9 +37,7 @@
         header h1 {
             font-size: 1.8rem;
             font-weight: 700;
-            background: linear-gradient(135deg, var(--accent), var(--success));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: var(--text);
         }
         header p {
             color: var(--text-muted);
@@ -116,7 +114,7 @@
         .upload-text { color: var(--text-muted); font-size: .9rem; }
         .upload-filename {
             margin-top: .6rem;
-            color: var(--success);
+            color: var(--accent);
             font-weight: 600;
             font-size: .95rem;
             word-break: break-all;
@@ -187,9 +185,9 @@
         }
         .result.success {
             display: block;
-            background: rgba(0, 206, 201, .1);
-            border: 1px solid rgba(0, 206, 201, .3);
-            color: var(--success);
+            background: rgba(108, 92, 231, .08);
+            border: 1px solid rgba(108, 92, 231, .25);
+            color: var(--accent);
         }
         .result.error {
             display: block;
@@ -213,6 +211,111 @@
             font-family: monospace;
             font-size: .95rem;
             user-select: all;
+        }
+
+        /* ── wm_size 醒目标识 ── */
+        .wm-size-badge {
+            display: inline-block;
+            margin: .8rem 0;
+            padding: .7rem 1.2rem;
+            background: rgba(108, 92, 231, .15);
+            border: 2px dashed var(--accent);
+            border-radius: 10px;
+            text-align: center;
+        }
+        .wm-size-badge .wm-size-label {
+            font-size: .75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+        .wm-size-badge .wm-size-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--accent);
+            font-family: monospace;
+            user-select: all;
+        }
+        .wm-size-badge .wm-size-hint {
+            font-size: .75rem;
+            color: var(--text-muted);
+            margin-top: .2rem;
+        }
+
+        /* ── 嵌入结果 ── */
+        .embed-result-body {
+            text-align: center;
+        }
+
+        /* ── 下载按钮 ── */
+        .btn-download {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            padding: .6rem 1.4rem;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: .9rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all .2s;
+            margin-top: .8rem;
+        }
+        .btn-download:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        /* ── 开关 ── */
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: .4rem 0;
+            margin-bottom: .6rem;
+        }
+        .toggle-label {
+            font-size: .85rem;
+            color: var(--text-muted);
+        }
+        .toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle .slider {
+            position: absolute;
+            inset: 0;
+            background: var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: .2s;
+        }
+        .toggle .slider::before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: .2s;
+        }
+        .toggle input:checked + .slider {
+            background: var(--accent);
+        }
+        .toggle input:checked + .slider::before {
+            transform: translateX(20px);
         }
 
         /* ── 加载动画 ── */
@@ -282,6 +385,14 @@
                         <label>密码（可选）</label>
                         <input type="number" name="password" placeholder="默认 1" value="1">
                     </div>
+                </div>
+
+                <div class="toggle-row">
+                    <span class="toggle-label">压缩大图（宽高限制 1024px）</span>
+                    <label class="toggle">
+                        <input type="checkbox" name="compress" checked>
+                        <span class="slider"></span>
+                    </label>
                 </div>
 
                 <button type="submit" class="btn btn-primary" id="embed-btn">
@@ -432,6 +543,7 @@
             fd.append('image', uploadFile);
             fd.append('watermark', form.watermark.value);
             fd.append('password', form.password.value);
+            fd.append('compress', form.compress.checked ? '1' : '0');
 
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 180000);
@@ -457,23 +569,32 @@
                 return;
             }
 
-            // 下载图片（base64 -> blob -> download）
+            // 保存图片 blob 供下载按钮使用
             const byteChars = atob(data.image);
             const byteArray = new Uint8Array(byteChars.length);
             for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
             const blob = new Blob([byteArray], { type: 'image/png' });
-            const url = URL.createObjectURL(blob);
+            const downloadUrl = URL.createObjectURL(blob);
+            window._wmDownloadUrl = downloadUrl;
+
+            // 自动触发下载
             const a = document.createElement('a');
-            a.href = url;
+            a.href = downloadUrl;
             a.download = 'watermarked.png';
             a.click();
-            URL.revokeObjectURL(url);
 
             showResult('embed-result', 'success',
-                `<div class="result-title">✅ 水印嵌入成功！图片已自动下载</div>
-                 <div class="result-detail">
-                     水印 bit 长度：<strong>${data.wm_size}</strong><br>
-                     ⚠️ 提取水印时需要填写此数值，请妥善保存！
+                `<div class="embed-result-body">
+                     <div class="result-title">✅ 水印嵌入成功</div>
+                     <div class="wm-size-badge">
+                         <div class="wm-size-label">🔑 水印 bit 长度（提取时必填）</div>
+                         <div class="wm-size-value">${data.wm_size}</div>
+                         <div class="wm-size-hint">⚠️ 请务必记录此数值，丢失将无法提取水印</div>
+                     </div>
+                     <br>
+                     <a class="btn-download" href="${downloadUrl}" download="watermarked.png">
+                         📥 下载水印图片
+                     </a>
                  </div>`
             );
         } catch (err) {
@@ -511,7 +632,8 @@
 
             showResult('extract-result', 'success',
                 `<div class="result-title">✅ 水印提取成功！</div>
-                 <div class="wm-output">${escapeHtml(data.watermark)}</div>`
+                 <div class="wm-output">${escapeHtml(data.watermark)}</div>
+                 <div class="result-detail" style="margin-top:.6rem;color:var(--text-muted);font-size:.8rem">💡 如果显示乱码，说明密码错误或图片已被损坏</div>`
             );
         } catch (err) {
             showResult('extract-result', 'error', '❌ 网络错误: ' + err.message);

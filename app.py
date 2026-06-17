@@ -73,13 +73,15 @@ def api_embed():
     if img is None:
         return jsonify(error='图片读取失败，请检查文件'), 400
 
-    # 大图缩放：SVD 运算复杂度高，大图会超时
-    h, w = img.shape[:2]
-    max_dim = 1024
-    if max(h, w) > max_dim:
-        scale = max_dim / max(h, w)
-        new_w, new_h = int(w * scale), int(h * scale)
-        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # 压缩大图（默认开启）
+    compress = request.form.get('compress', '1')
+    if compress == '1':
+        h, w = img.shape[:2]
+        max_dim = 1024
+        if max(h, w) > max_dim:
+            scale = max_dim / max(h, w)
+            new_w, new_h = int(w * scale), int(h * scale)
+            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     # 嵌入水印
     try:
@@ -142,4 +144,4 @@ def api_extract():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
