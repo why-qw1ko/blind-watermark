@@ -1,0 +1,6 @@
+flask>=2.0
+numpy>=1.17.0
+opencv-python-headless
+PyWavelets
+blind-watermark
+gunicorn

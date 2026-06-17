@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>盲水印工具 - Blind Watermark</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --card: #1a1d27;
+            --border: #2a2d3a;
+            --accent: #6c5ce7;
+            --accent-hover: #7f6ff0;
+            --text: #e2e2e8;
+            --text-muted: #8b8d9a;
+            --success: #00cec9;
+            --error: #ff6b6b;
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        header {
+            padding: 2rem 0 1rem;
+            text-align: center;
+        }
+        header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--success));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        header p {
+            color: var(--text-muted);
+            margin-top: .4rem;
+            font-size: .9rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: .5rem;
+            margin: 1.5rem 0 1rem;
+        }
+        .tab-btn {
+            padding: .6rem 1.8rem;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: .95rem;
+            transition: all .2s;
+        }
+        .tab-btn.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .tab-btn:hover:not(.active) {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+
+        .container {
+            width: 100%;
+            max-width: 540px;
+            padding: 0 1.2rem 3rem;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.8rem;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ── 上传区 ── */
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 2rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all .2s;
+            margin-bottom: 1.2rem;
+            position: relative;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--accent);
+            background: rgba(108, 92, 231, .06);
+        }
+        .upload-area input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .upload-icon {
+            font-size: 2.2rem;
+            margin-bottom: .5rem;
+        }
+        .upload-text { color: var(--text-muted); font-size: .9rem; }
+        .upload-filename {
+            margin-top: .6rem;
+            color: var(--success);
+            font-weight: 600;
+            font-size: .95rem;
+            word-break: break-all;
+        }
+
+        /* ── 表单 ── */
+        .form-group { margin-bottom: 1rem; }
+        .form-group label {
+            display: block;
+            margin-bottom: .4rem;
+            font-size: .85rem;
+            color: var(--text-muted);
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: .7rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: .95rem;
+            outline: none;
+            transition: border-color .2s;
+        }
+        .form-group input:focus, .form-group textarea:focus {
+            border-color: var(--accent);
+        }
+        .form-group textarea { resize: vertical; min-height: 60px; }
+
+        .row {
+            display: flex;
+            gap: .8rem;
+        }
+        .row .form-group { flex: 1; }
+
+        /* ── 按钮 ── */
+        .btn {
+            width: 100%;
+            padding: .8rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all .2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .btn-primary:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+
+        /* ── 结果 ── */
+        .result {
+            margin-top: 1.2rem;
+            padding: 1rem;
+            border-radius: 8px;
+            display: none;
+            word-break: break-all;
+        }
+        .result.success {
+            display: block;
+            background: rgba(0, 206, 201, .1);
+            border: 1px solid rgba(0, 206, 201, .3);
+            color: var(--success);
+        }
+        .result.error {
+            display: block;
+            background: rgba(255, 107, 107, .1);
+            border: 1px solid rgba(255, 107, 107, .3);
+            color: var(--error);
+        }
+        .result .result-title {
+            font-weight: 600;
+            margin-bottom: .4rem;
+        }
+        .result .result-detail {
+            font-size: .9rem;
+            line-height: 1.5;
+        }
+        .result .wm-output {
+            margin-top: .6rem;
+            padding: .6rem;
+            background: var(--bg);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: .95rem;
+            user-select: all;
+        }
+
+        /* ── 加载动画 ── */
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255,255,255,.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── 预览 ── */
+        .preview-img {
+            max-width: 100%;
+            border-radius: 8px;
+            margin-top: .8rem;
+        }
+
+        footer {
+            padding: 1.5rem;
+            color: var(--text-muted);
+            font-size: .8rem;
+            text-align: center;
+        }
+        footer a { color: var(--accent); text-decoration: none; }
+
+        @media (max-width: 480px) {
+            .card { padding: 1.2rem; }
+            .row { flex-direction: column; gap: 0; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>🔮 盲水印工具</h1>
+    <p>在图片中嵌入不可见水印，支持提取验证</p>
+</header>
+
+<div class="tabs">
+    <button class="tab-btn active" data-tab="embed">嵌入水印</button>
+    <button class="tab-btn" data-tab="extract">提取水印</button>
+</div>
+
+<div class="container">
+
+    <!-- ═══════════ 嵌入模式 ═══════════ -->
+    <div id="tab-embed" class="tab-content active">
+        <div class="card">
+            <form id="embed-form">
+                <div class="upload-area" id="embed-upload">
+                    <input type="file" name="image" accept="image/*" id="embed-file">
+                    <div class="upload-icon">📤</div>
+                    <div class="upload-text">点击或拖拽上传图片</div>
+                    <div class="upload-filename" id="embed-filename"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>水印内容</label>
+                    <textarea name="watermark" placeholder="输入要嵌入的文字水印..." rows="2"></textarea>
+                </div>
+
+                <div class="row">
+                    <div class="form-group">
+                        <label>密码（可选）</label>
+                        <input type="number" name="password" placeholder="默认 1" value="1">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="embed-btn">
+                    🔏 嵌入水印
+                </button>
+            </form>
+
+            <div class="result" id="embed-result"></div>
+        </div>
+    </div>
+
+    <!-- ═══════════ 提取模式 ═══════════ -->
+    <div id="tab-extract" class="tab-content">
+        <div class="card">
+            <form id="extract-form">
+                <div class="upload-area" id="extract-upload">
+                    <input type="file" name="image" accept="image/*" id="extract-file">
+                    <div class="upload-icon">📤</div>
+                    <div class="upload-text">点击或拖拽上传带水印的图片</div>
+                    <div class="upload-filename" id="extract-filename"></div>
+                </div>
+
+                <div class="row">
+                    <div class="form-group">
+                        <label>水印长度（bit 数）</label>
+                        <input type="number" name="wm_length" placeholder="嵌入时会显示" required>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="number" name="password" placeholder="默认 1" value="1">
+                    </div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="extract-btn">
+                    🔍 提取水印
+                </button>
+            </form>
+
+            <div class="result" id="extract-result"></div>
+        </div>
+    </div>
+
+</div>
+
+<footer>
+    基于 <a href="https://github.com/guofei9987/blind_watermark" target="_blank">blind_watermark</a> 开源项目
+</footer>
+
+<script>
+    // ── Tab 切换 ──
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        });
+    });
+
+    // ── 文件选择显示 ──
+    function setupFileInput(inputId, filenameId, uploadId) {
+        const input = document.getElementById(inputId);
+        const fname = document.getElementById(filenameId);
+        const area = document.getElementById(uploadId);
+
+        input.addEventListener('change', () => {
+            fname.textContent = input.files[0] ? '✅ ' + input.files[0].name : '';
+        });
+
+        area.addEventListener('dragover', e => { e.preventDefault(); area.classList.add('dragover'); });
+        area.addEventListener('dragleave', () => area.classList.remove('dragover'));
+        area.addEventListener('drop', e => {
+            e.preventDefault();
+            area.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                input.files = e.dataTransfer.files;
+                fname.textContent = '✅ ' + e.dataTransfer.files[0].name;
+            }
+        });
+    }
+    setupFileInput('embed-file', 'embed-filename', 'embed-upload');
+    setupFileInput('extract-file', 'extract-filename', 'extract-upload');
+
+    // ── 设置按钮状态 ──
+    function setLoading(btn, loading) {
+        if (loading) {
+            btn.disabled = true;
+            btn._oldHtml = btn.innerHTML;
+            btn.innerHTML = '<div class="spinner"></div> 处理中...';
+        } else {
+            btn.disabled = false;
+            if (btn._oldHtml) btn.innerHTML = btn._oldHtml;
+        }
+    }
+
+    function showResult(id, type, html) {
+        const el = document.getElementById(id);
+        el.className = 'result ' + type;
+        el.innerHTML = html;
+    }
+
+    // ── 嵌入水印 ──
+    document.getElementById('embed-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('embed-btn');
+        const form = e.target;
+        const file = form.image.files[0];
+
+        if (!file) { showResult('embed-result', 'error', '⚠️ 请先上传图片'); return; }
+        if (!form.watermark.value.trim()) { showResult('embed-result', 'error', '⚠️ 请输入水印内容'); return; }
+
+        const fd = new FormData(form);
+        setLoading(btn, true);
+        showResult('embed-result', '', '');
+
+        try {
+            const resp = await fetch('/api/embed', { method: 'POST', body: fd });
+
+            if (!resp.ok) {
+                const err = await resp.json();
+                showResult('embed-result', 'error', '❌ ' + (err.error || '未知错误'));
+                return;
+            }
+
+            const data = await resp.json();
+
+            // 下载图片（base64 -> blob -> download）
+            const byteChars = atob(data.image);
+            const byteArray = new Uint8Array(byteChars.length);
+            for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+            const blob = new Blob([byteArray], { type: 'image/png' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'watermarked.png';
+            a.click();
+            URL.revokeObjectURL(url);
+
+            showResult('embed-result', 'success',
+                `<div class="result-title">✅ 水印嵌入成功！图片已自动下载</div>
+                 <div class="result-detail">
+                     水印 bit 长度：<strong>${data.wm_size}</strong><br>
+                     ⚠️ 提取水印时需要填写此数值，请妥善保存！
+                 </div>`
+            );
+        } catch (err) {
+            showResult('embed-result', 'error', '❌ 网络错误: ' + err.message);
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    // ── 提取水印 ──
+    document.getElementById('extract-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('extract-btn');
+        const form = e.target;
+
+        if (!form.image.files[0]) { showResult('extract-result', 'error', '⚠️ 请先上传图片'); return; }
+        if (!form.wm_length.value) { showResult('extract-result', 'error', '⚠️ 请输入水印长度'); return; }
+
+        const fd = new FormData(form);
+        setLoading(btn, true);
+        showResult('extract-result', '', '');
+
+        try {
+            const resp = await fetch('/api/extract', { method: 'POST', body: fd });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                showResult('extract-result', 'error', '❌ ' + (data.error || '提取失败'));
+                return;
+            }
+
+            showResult('extract-result', 'success',
+                `<div class="result-title">✅ 水印提取成功！</div>
+                 <div class="wm-output">${escapeHtml(data.watermark)}</div>`
+            );
+        } catch (err) {
+            showResult('extract-result', 'error', '❌ 网络错误: ' + err.message);
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+
+</body>
+</html>
