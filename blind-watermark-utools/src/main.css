@@ -1,0 +1,649 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background-color: #f4f4f4;
+  }
+
+  ::-webkit-scrollbar-track-piece {
+    background-color: #f4f4f4;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-color: #f4f4f4;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  &::-webkit-scrollbar-track-piece {
+    background-color: #303133;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: #666;
+    border-color: #303133;
+  }
+
+  body {
+    background-color: #303133;
+    color: #fff;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   盲水印组件样式
+   ═══════════════════════════════════════════════════════ */
+
+/* ─── App 容器 ─────────────────────────────────────── */
+
+.wm-app {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ─── Header ──────────────────────────────────────── */
+
+.wm-header {
+  padding: 18px 20px 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+.wm-dark .wm-header {
+  border-bottom-color: #424242;
+}
+
+.wm-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: center;
+  color: #212121;
+}
+.wm-dark .wm-title {
+  color: #f5f5f5;
+}
+
+.wm-subtitle {
+  margin: 4px 0 12px;
+  font-size: 0.78rem;
+  text-align: center;
+  color: #888;
+}
+.wm-dark .wm-subtitle {
+  color: #999;
+}
+
+/* ─── Tabs ────────────────────────────────────────── */
+
+.wm-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+}
+.wm-tab {
+  flex: 1;
+  max-width: 160px;
+  padding: 8px 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  color: #666;
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.wm-dark .wm-tab {
+  color: #aaa;
+}
+.wm-tab:hover {
+  color: #3949ab;
+}
+.wm-dark .wm-tab:hover {
+  color: #90caf9;
+}
+.wm-tab.active {
+  color: #3949ab;
+  border-bottom-color: #3949ab;
+}
+.wm-dark .wm-tab.active {
+  color: #90caf9;
+  border-bottom-color: #90caf9;
+}
+
+/* ─── Content ─────────────────────────────────────── */
+
+.wm-content {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* ─── Footer ──────────────────────────────────────── */
+
+.wm-footer {
+  padding: 10px;
+  text-align: center;
+  flex-shrink: 0;
+  border-top: 1px solid #e0e0e0;
+  font-size: 0.72rem;
+  color: #999;
+}
+.wm-dark .wm-footer {
+  border-top-color: #424242;
+  color: #777;
+}
+
+/* ─── 上传区域（空状态）──────────────────────────── */
+
+.wm-upload-zone {
+  position: relative;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  transition: border-color 0.2s, background-color 0.2s;
+  background: rgba(63, 81, 181, 0.02);
+}
+.wm-dark .wm-upload-zone {
+  border-color: #555;
+  background: rgba(144, 202, 249, 0.03);
+}
+.wm-upload-zone:hover {
+  border-color: #7986cb;
+  background: rgba(63, 81, 181, 0.05);
+}
+.wm-dark .wm-upload-zone:hover {
+  border-color: #90caf9;
+  background: rgba(144, 202, 249, 0.06);
+}
+.wm-upload-zone.wm-drag-over {
+  border-color: #3949ab;
+  border-width: 2px;
+  background: rgba(63, 81, 181, 0.08);
+}
+.wm-dark .wm-upload-zone.wm-drag-over {
+  border-color: #90caf9;
+  background: rgba(144, 202, 249, 0.1);
+}
+
+.wm-upload-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wm-upload-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3949ab;
+  background: rgba(63, 81, 181, 0.08);
+}
+.wm-dark .wm-upload-icon {
+  color: #90caf9;
+  background: rgba(144, 202, 249, 0.1);
+}
+
+.wm-upload-text {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #333;
+}
+.wm-dark .wm-upload-text {
+  color: #ddd;
+}
+
+.wm-upload-hint {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  color: #999;
+}
+.wm-dark .wm-upload-hint {
+  color: #777;
+}
+
+/* ─── 上传区域（预览模式）─────────────────────────── */
+
+.wm-upload-preview {
+  position: relative;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+  transition: border-color 0.2s;
+}
+.wm-dark .wm-upload-preview {
+  border-color: #424242;
+}
+.wm-upload-preview.wm-drag-over {
+  border-color: #3949ab;
+  border-width: 2px;
+}
+.wm-dark .wm-upload-preview.wm-drag-over {
+  border-color: #90caf9;
+}
+
+.wm-upload-img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  display: block;
+}
+
+.wm-upload-img-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 60%);
+}
+
+.wm-upload-img-name {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+}
+
+.wm-upload-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.45);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 26px;
+  text-align: center;
+  padding: 0;
+}
+.wm-upload-remove:hover {
+  background: rgba(0,0,0,0.7);
+}
+
+/* ─── 表单 ────────────────────────────────────────── */
+
+.wm-form-group {
+  margin-bottom: 14px;
+}
+
+.wm-form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.wm-flex-1 {
+  flex: 1;
+}
+
+.wm-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #444;
+}
+.wm-dark .wm-label {
+  color: #bbb;
+}
+
+.wm-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  outline: none;
+  box-sizing: border-box;
+  background: #fff;
+  color: #333;
+  transition: border-color 0.2s;
+}
+.wm-dark .wm-input {
+  background: #424242;
+  border-color: #555;
+  color: #eee;
+}
+.wm-input:focus {
+  border-color: #3949ab;
+}
+.wm-dark .wm-input:focus {
+  border-color: #90caf9;
+}
+
+.wm-helper {
+  margin: 3px 0 0;
+  font-size: 0.7rem;
+  color: #999;
+}
+.wm-dark .wm-helper {
+  color: #777;
+}
+
+/* ─── Switch 开关 ─────────────────────────────────── */
+
+.wm-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-bottom: 14px;
+  user-select: none;
+}
+.wm-switch input {
+  display: none;
+}
+.wm-switch-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #bbb;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.wm-switch input:checked + .wm-switch-track {
+  background: #3949ab;
+}
+.wm-dark .wm-switch input:checked + .wm-switch-track {
+  background: #90caf9;
+}
+.wm-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.wm-switch input:checked + .wm-switch-track .wm-switch-thumb {
+  transform: translateX(16px);
+}
+.wm-switch-label {
+  font-size: 0.82rem;
+  color: #444;
+}
+.wm-dark .wm-switch-label {
+  color: #bbb;
+}
+
+/* ─── 按钮 ────────────────────────────────────────── */
+
+.wm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+}
+.wm-btn:disabled {
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.wm-btn:not(:disabled):active {
+  opacity: 0.7;
+}
+
+.wm-btn-primary {
+  width: 100%;
+  background: #3949ab;
+  color: #fff;
+  padding: 12px;
+  font-size: 0.9rem;
+}
+.wm-dark .wm-btn-primary {
+  background: #5c6bc0;
+}
+.wm-btn-primary:hover:not(:disabled) {
+  background: #303f9f;
+}
+.wm-dark .wm-btn-primary:hover:not(:disabled) {
+  background: #7986cb;
+}
+
+.wm-btn-outline {
+  background: transparent;
+  color: #3949ab;
+  border: 1px solid #3949ab;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+}
+.wm-dark .wm-btn-outline {
+  color: #90caf9;
+  border-color: #90caf9;
+}
+.wm-btn-outline:hover:not(:disabled) {
+  background: rgba(63, 81, 181, 0.08);
+}
+.wm-dark .wm-btn-outline:hover:not(:disabled) {
+  background: rgba(144, 202, 249, 0.1);
+}
+
+/* ─── 进度条 ──────────────────────────────────────── */
+
+.wm-progress {
+  margin-top: 12px;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.wm-dark .wm-progress {
+  background: #424242;
+}
+.wm-progress-bar {
+  height: 100%;
+  width: 40%;
+  background: #3949ab;
+  border-radius: 2px;
+  animation: wm-progress-indeterminate 1.5s ease-in-out infinite;
+}
+.wm-dark .wm-progress-bar {
+  background: #90caf9;
+}
+@keyframes wm-progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* ─── 错误提示 ────────────────────────────────────── */
+
+.wm-error {
+  position: relative;
+  margin-top: 12px;
+  padding: 12px 30px 12px 14px;
+  background: #ffebee;
+  border-radius: 6px;
+  color: #c62828;
+  font-size: 0.82rem;
+}
+.wm-dark .wm-error {
+  background: #4e1a1a;
+  color: #ef9a9a;
+}
+.wm-error strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.wm-error p {
+  margin: 0;
+}
+.wm-error-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.6;
+}
+.wm-error-close:hover {
+  opacity: 1;
+}
+
+/* ─── 结果卡片 ────────────────────────────────────── */
+
+.wm-result {
+  margin-top: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.wm-dark .wm-result {
+  border-color: #424242;
+}
+
+.wm-result-header {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.wm-result-success {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.wm-dark .wm-result-success {
+  background: #1b3a1b;
+  color: #a5d6a7;
+}
+
+.wm-result-body {
+  padding: 18px 14px;
+  text-align: center;
+}
+
+.wm-result-label {
+  margin: 0;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #999;
+}
+.wm-dark .wm-result-label {
+  color: #777;
+}
+
+.wm-result-value {
+  margin: 6px 0;
+  font-size: 2.2rem;
+  font-weight: 800;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  color: #3949ab;
+}
+.wm-dark .wm-result-value {
+  color: #90caf9;
+}
+
+.wm-result-warn {
+  margin: 0 0 14px;
+  font-size: 0.72rem;
+  color: #f9a825;
+}
+.wm-dark .wm-result-warn {
+  color: #fff176;
+}
+
+.wm-result-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.wm-result-text {
+  margin: 6px 0 14px;
+  padding: 12px;
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.9rem;
+  word-break: break-all;
+  user-select: all;
+  line-height: 1.6;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  text-align: left;
+}
+.wm-dark .wm-result-text {
+  background: #333;
+  border-color: #424242;
+}
+
+.wm-result-hint {
+  font-size: 0.7rem;
+  color: #999;
+  margin-left: 8px;
+}
+.wm-dark .wm-result-hint {
+  color: #777;
+}
+
+/* ─── 自检提示 ────────────────────────────────────── */
+
+.wm-selftest {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+.wm-selftest-ok {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.wm-dark .wm-selftest-ok {
+  background: #1b3a1b;
+  color: #a5d6a7;
+}
+.wm-selftest-fail {
+  background: #ffebee;
+  color: #c62828;
+}
+.wm-dark .wm-selftest-fail {
+  background: #4e1a1a;
+  color: #ef9a9a;
+}
+.wm-selftest p {
+  margin: 2px 0 0;
+  word-break: break-all;
+}

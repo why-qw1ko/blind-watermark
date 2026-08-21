@@ -1,0 +1,24 @@
+{
+  "main": "index.html",
+  "preload": "preload/services.js",
+  "logo": "logo.png",
+  "development": {
+    "main": "http://localhost:5173"
+  },
+  "features": [
+    {
+      "code": "blind-watermark",
+      "explain": "盲水印工具 - 在图片中嵌入和提取不可见水印",
+      "cmds": [
+        {
+          "type": "text",
+          "label": "盲水印"
+        },
+        {
+          "type": "text",
+          "label": "blind-watermark"
+        }
+      ]
+    }
+  ]
+}
