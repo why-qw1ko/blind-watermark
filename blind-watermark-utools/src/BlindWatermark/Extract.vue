@@ -1,188 +1,170 @@
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { computed, ref } from 'vue'
+import FileQueue from './FileQueue.vue'
+import { useImageQueue } from './useImageQueue.js'
 
-// ─── 状态 ─────────────────────────────────────────────
-const file = ref(null)
-const previewUrl = ref('')
-const dragOver = ref(false)
-const wmLength = ref('')
+const {
+  config,
+  items,
+  queueError,
+  totalSize,
+  addFiles,
+  chooseFiles,
+  removeItem,
+  clearItems,
+  resetStatuses,
+  applyProgress,
+  serviceSources
+} = useImageQueue('extract')
+
 const password = ref('1')
-const loading = ref(false)
-const result = ref(null)
+const showPassword = ref(false)
+const mode = ref('auto')
+const legacyLength = ref('')
+const processing = ref(false)
 const error = ref('')
+const results = ref([])
+const exportedPath = ref('')
 
-// ─── 工具函数 ─────────────────────────────────────────
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(new Error('文件读取失败'))
-    reader.readAsDataURL(file)
-  })
-}
+const successCount = computed(() => results.value.filter(item => item.success).length)
+const failureCount = computed(() => results.value.filter(item => !item.success).length)
 
-// ─── 文件选择 ─────────────────────────────────────────
-function handleFileSelect(f) {
+async function handleExtract () {
   error.value = ''
-  result.value = null
-  if (previewUrl.value) {
-    URL.revokeObjectURL(previewUrl.value)
-    previewUrl.value = ''
+  exportedPath.value = ''
+  results.value = []
+  if (!items.value.length) {
+    error.value = '请先选择至少一张图片'
+    return
   }
-  if (f) {
-    file.value = f
-    previewUrl.value = URL.createObjectURL(f)
-  } else {
-    file.value = null
+  if (!password.value) {
+    error.value = '请输入密码'
+    return
   }
-}
 
-// 点击上传 → uTools 文件对话框
-async function handleClickUpload() {
-  const files = window.utools.showOpenDialog({
-    title: '选择图片',
-    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'webp'] }],
-    properties: ['openFile']
-  })
-  if (!files || !files.length) return
-
-  const filePath = files[0]
-  const dataUrl = window.services.readImageAsBase64(filePath)
-  const info = window.services.getFileInfo(filePath)
-
-  // 从 data URL 创建 File 对象
-  const resp = await fetch(dataUrl)
-  const blob = await resp.blob()
-  const f = new File([blob], info.name, { type: blob.type })
-  handleFileSelect(f)
-}
-
-// 拖拽上传
-function handleDrop(e) {
-  e.preventDefault()
-  dragOver.value = false
-  if (e.dataTransfer.files?.length) handleFileSelect(e.dataTransfer.files[0])
-}
-
-// ─── 提取水印 ─────────────────────────────────────────
-async function handleExtract(e) {
-  e.preventDefault()
-  error.value = ''
-  result.value = null
-
-  if (!file.value) { error.value = '请先上传图片'; return }
-  if (!wmLength.value.trim()) { error.value = '请输入水印长度'; return }
-
-  const wmLen = parseInt(wmLength.value, 10)
-  if (isNaN(wmLen) || wmLen <= 0) { error.value = '水印长度必须为正整数'; return }
-
-  loading.value = true
+  processing.value = true
+  resetStatuses()
   try {
-    const base64 = await fileToBase64(file.value)
-    const watermarkText = await window.services.extractWatermark(base64, wmLen, password.value)
-    result.value = watermarkText
-  } catch (err) {
-    error.value = err.message || '提取水印失败'
+    const response = await window.services.extractBatch(
+      serviceSources(),
+      password.value,
+      { mode: mode.value, legacyLength: legacyLength.value },
+      applyProgress
+    )
+    results.value = response.results
+  } catch (caught) {
+    error.value = caught.message || '批量提取失败'
   } finally {
-    loading.value = false
+    processing.value = false
   }
 }
 
-function handleCopy() {
-  if (result.value) window.utools?.copyText(result.value)
+function copyAll () {
+  const text = results.value
+    .filter(item => item.success)
+    .map(item => `${item.name}\t${item.watermark}`)
+    .join('\n')
+  if (text) window.utools.copyText(text)
 }
 
-// ─── 清理 ────────────────────────────────────────────
-onUnmounted(() => {
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-})
+function exportCsv () {
+  try {
+    exportedPath.value = window.services.saveExtractionCsv(results.value, config.downloadsDirectory)
+  } catch (caught) {
+    error.value = caught.message || '导出失败'
+  }
+}
+
+function revealExport () {
+  if (exportedPath.value) window.services.revealInFolder(exportedPath.value)
+}
 </script>
 
 <template>
-  <form @submit="handleExtract">
-    <!-- 上传区域 -->
-    <div v-if="previewUrl" class="wm-upload-preview" :class="{ 'wm-drag-over': dragOver }"
-      @drop="handleDrop"
-      @dragover.prevent="dragOver = true"
-      @dragleave="dragOver = false"
-    >
-      <img :src="previewUrl" :alt="file?.name" class="wm-upload-img" />
-      <div class="wm-upload-img-overlay"></div>
-      <span class="wm-upload-img-name">{{ file?.name }} ({{ (file?.size / 1024).toFixed(0) }} KB)</span>
-      <button type="button" class="wm-upload-remove" @click="handleFileSelect(null)">✕</button>
-    </div>
+  <form class="wm-workspace" @submit.prevent="handleExtract">
+    <FileQueue
+      :items="items"
+      :error="queueError"
+      :max-files="config.maxBatchFiles"
+      :total-size="totalSize"
+      :disabled="processing"
+      @choose="chooseFiles"
+      @drop="addFiles"
+      @remove="removeItem"
+      @clear="clearItems"
+    />
 
-    <div v-else class="wm-upload-zone" :class="{ 'wm-drag-over': dragOver }"
-      @click="handleClickUpload"
-      @dragover.prevent="dragOver = true"
-      @dragleave="dragOver = false"
-      @drop="handleDrop"
-    >
-      <div class="wm-upload-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-          <circle cx="8.5" cy="8.5" r="1.5"/>
-          <polyline points="21 15 16 10 5 21"/>
-        </svg>
+    <div class="wm-form-grid">
+      <div class="wm-field">
+        <label for="extract-mode">图片格式</label>
+        <select id="extract-mode" v-model="mode" :disabled="processing">
+          <option value="auto">新版 BWM2（自动识别）</option>
+          <option value="legacy-utools">旧版 uTools（手填长度）</option>
+        </select>
       </div>
-      <p class="wm-upload-text">点击选择图片，或拖拽图片到此处</p>
-      <p class="wm-upload-hint">支持 PNG / JPG / BMP / WebP</p>
-    </div>
 
-    <!-- 水印长度 + 密码 -->
-    <div class="wm-form-row">
-      <div class="wm-form-group wm-flex-1">
-        <label class="wm-label">水印长度（bit 数）</label>
-        <input
-          v-model="wmLength"
-          type="text"
-          inputmode="numeric"
-          class="wm-input"
-          placeholder="嵌入时显示的数字"
-        />
-      </div>
-      <div class="wm-form-group wm-flex-1">
-        <label class="wm-label">密码</label>
-        <input
-          v-model="password"
-          type="text"
-          inputmode="numeric"
-          class="wm-input"
-        />
-      </div>
-    </div>
-
-    <!-- 提取按钮 -->
-    <button type="submit" class="wm-btn wm-btn-primary" :disabled="loading">
-      <template v-if="!loading">🔍 提取水印</template>
-      <template v-else>处理中...</template>
-    </button>
-
-    <!-- 进度条 -->
-    <div v-if="loading" class="wm-progress">
-      <div class="wm-progress-bar"></div>
-    </div>
-
-    <!-- 错误 -->
-    <div v-if="error" class="wm-error">
-      <strong>错误</strong>
-      <p>{{ error }}</p>
-      <button type="button" class="wm-error-close" @click="error = ''">✕</button>
-    </div>
-
-    <!-- 成功结果 -->
-    <div v-if="result" class="wm-result">
-      <div class="wm-result-header wm-result-success">
-        <span>✓ 水印提取成功</span>
-      </div>
-      <div class="wm-result-body">
-        <p class="wm-result-label">提取结果</p>
-        <div class="wm-result-text">{{ result }}</div>
-        <div class="wm-result-actions">
-          <button type="button" class="wm-btn wm-btn-primary" @click="handleCopy">📋 复制水印</button>
-          <span class="wm-result-hint">乱码说明密码错误或图片已损坏</span>
+      <div class="wm-field">
+        <label for="extract-password">密码</label>
+        <div class="wm-password-field">
+          <input
+            id="extract-password"
+            v-model="password"
+            :type="showPassword ? 'text' : 'password'"
+            autocomplete="off"
+            maxlength="128"
+            :disabled="processing"
+          />
+          <button type="button" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button>
         </div>
       </div>
+
+      <div v-if="mode === 'legacy-utools'" class="wm-field wm-field-wide">
+        <label for="legacy-length">旧版水印 bit 长度</label>
+        <input
+          id="legacy-length"
+          v-model="legacyLength"
+          type="number"
+          min="56"
+          step="56"
+          inputmode="numeric"
+          placeholder="旧版嵌入完成时显示的数字"
+          :disabled="processing"
+        />
+        <small>旧版结果没有完整性校验，只能作为候选文本。</small>
+      </div>
     </div>
+
+    <button type="submit" class="wm-primary-button" :disabled="processing || !items.length">
+      <span v-if="processing" class="wm-spinner" aria-hidden="true"></span>
+      {{ processing ? '正在逐张提取…' : `提取水印${items.length ? `（${items.length} 张）` : ''}` }}
+    </button>
+
+    <p v-if="error" class="wm-callout is-error" role="alert">{{ error }}</p>
+
+    <section v-if="results.length" class="wm-extract-results" aria-live="polite">
+      <div class="wm-results-head">
+        <div>
+          <h2>提取结果</h2>
+          <p>{{ successCount }} 张成功<template v-if="failureCount">，{{ failureCount }} 张失败</template></p>
+        </div>
+        <div class="wm-results-actions">
+          <button type="button" class="wm-secondary-button" :disabled="!successCount" @click="copyAll">复制成功项</button>
+          <button type="button" class="wm-secondary-button" @click="exportCsv">导出 CSV</button>
+        </div>
+      </div>
+
+      <ul class="wm-output-list">
+        <li v-for="item in results" :key="item.name + item.format">
+          <div class="wm-output-title">
+            <strong :title="item.name">{{ item.name }}</strong>
+            <span :class="item.success ? 'is-success' : 'is-failed'">{{ item.success ? (item.verified ? '已校验' : '未校验') : '失败' }}</span>
+          </div>
+          <pre v-if="item.success">{{ item.watermark }}</pre>
+          <p v-else>{{ item.error.message }}</p>
+        </li>
+      </ul>
+
+      <button v-if="exportedPath" type="button" class="wm-export-link" @click="revealExport">CSV 已保存，点击查看</button>
+    </section>
   </form>
 </template>

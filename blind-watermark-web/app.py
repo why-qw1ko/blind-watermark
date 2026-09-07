@@ -1,147 +1,240 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Blind Watermark Web App
-基于 blind_watermark 的网页版盲水印工具
+"""Web shell plus compatibility API for legacy Web watermarks.
+
+The current BWM2 workflow runs entirely in the browser. The two upload routes
+remain stable so existing integrations can embed/extract the historical
+``blind-watermark`` package format.
 """
 
-import io
+from __future__ import annotations
+
+import base64
 import os
-import sys
-import tempfile
+import uuid
+from pathlib import Path
 
 import cv2
 import numpy as np
-from flask import Flask, render_template, request, send_file, jsonify
-
 from blind_watermark import WaterMark
+from flask import Flask, jsonify, render_template, request, send_from_directory
+from werkzeug.exceptions import RequestEntityTooLarge
+
+
+APP_DIR = Path(__file__).resolve().parent
+SHARED_DIR = APP_DIR.parent / "shared"
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_REQUEST_BYTES = MAX_UPLOAD_BYTES + 1024 * 1024
+MAX_IMAGE_PIXELS = 25_000_000
+MAX_WATERMARK_BYTES = 512
+MAX_LEGACY_WATERMARK_BITS = 1_000_000
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "bmp", "webp"}
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 20 * 1024 * 1024  # 限制上传 20MB
-
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'webp'}
-
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-
-def read_image_from_bytes(file_bytes):
-    """从字节流读取图片为 numpy 数组"""
-    nparr = np.frombuffer(file_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
-    return img
+app.config.update(
+    # Leave room for multipart field and boundary overhead while keeping the
+    # decoded file itself capped at MAX_UPLOAD_BYTES in read_uploaded_image().
+    MAX_CONTENT_LENGTH=MAX_REQUEST_BYTES,
+    JSON_AS_ASCII=False,
+)
 
 
-def image_to_bytes(img, fmt='.png'):
-    """将 numpy 数组转为 PNG 字节流"""
-    _, buffer = cv2.imencode(fmt, img)
-    return io.BytesIO(buffer.tobytes())
+class ApiInputError(ValueError):
+    """A safe validation message that may be returned to API clients."""
+
+    def __init__(self, message: str, code: str = "INPUT_INVALID") -> None:
+        super().__init__(message)
+        self.code = code
 
 
-# ─── 路由 ───────────────────────────────────────────────
+def api_error(message: str, status: int, code: str, request_id: str | None = None):
+    payload = {"error": message, "code": code}
+    if request_id:
+        payload["request_id"] = request_id
+    return jsonify(payload), status
 
-@app.route('/')
+
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def parse_legacy_password(raw_value: str | None) -> int:
+    value = "1" if raw_value is None or raw_value == "" else raw_value
+    if not value.isascii() or not value.isdecimal():
+        raise ApiInputError("旧版 Web 密码必须是非负整数", "PASSWORD_INVALID")
+    password = int(value)
+    if password > 2**31 - 1:
+        raise ApiInputError("旧版 Web 密码不能大于 2147483647", "PASSWORD_INVALID")
+    return password
+
+
+def read_uploaded_image():
+    if "image" not in request.files:
+        raise ApiInputError("请上传图片", "FILE_REQUIRED")
+
+    uploaded = request.files["image"]
+    if not uploaded.filename or not allowed_file(uploaded.filename):
+        raise ApiInputError("仅支持 PNG、JPG、BMP、WebP 图片", "FILE_TYPE_INVALID")
+    file_bytes = uploaded.read(MAX_UPLOAD_BYTES + 1)
+    if not file_bytes or len(file_bytes) > MAX_UPLOAD_BYTES:
+        raise ApiInputError("图片不能为空且不能超过 20 MB", "FILE_SIZE_EXCEEDED")
+
+    encoded = np.frombuffer(file_bytes, np.uint8)
+    image = cv2.imdecode(encoded, cv2.IMREAD_UNCHANGED)
+    if image is None:
+        raise ApiInputError("无法读取图片，请确认文件未损坏", "IMAGE_DECODE_FAILED")
+    if image.shape[0] * image.shape[1] > MAX_IMAGE_PIXELS:
+        raise ApiInputError("图片像素过大，最高支持 2500 万像素", "PIXEL_LIMIT_EXCEEDED")
+    if image.dtype != np.uint8:
+        raise ApiInputError("旧版 Web 兼容模式仅支持 8 位图片", "IMAGE_DEPTH_UNSUPPORTED")
+
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    elif image.ndim == 3 and image.shape[2] == 4:
+        image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
+    elif image.ndim != 3 or image.shape[2] != 3:
+        raise ApiInputError("图片通道格式不受支持", "IMAGE_CHANNELS_UNSUPPORTED")
+    return image
+
+
+def encode_png(image: np.ndarray) -> bytes:
+    success, encoded = cv2.imencode(".png", image)
+    if not success:
+        raise RuntimeError("OpenCV failed to encode PNG")
+    return encoded.tobytes()
+
+
+@app.get("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
-@app.route('/api/embed', methods=['POST'])
+@app.get("/shared/watermark-core.js")
+def shared_watermark_core():
+    return send_from_directory(SHARED_DIR, "watermark-core.js", mimetype="text/javascript")
+
+
+@app.get("/healthz")
+def healthz():
+    return jsonify(status="ok", version="2")
+
+
+@app.post("/api/embed")
 def api_embed():
-    """嵌入水印"""
-    # 参数校验
-    if 'image' not in request.files:
-        return jsonify(error='请上传图片'), 400
-
-    file = request.files['image']
-    if file.filename == '' or not allowed_file(file.filename):
-        return jsonify(error='请上传有效的图片文件 (png/jpg/jpeg/bmp/webp)'), 400
-
-    watermark = request.form.get('watermark', '').strip()
-    if not watermark:
-        return jsonify(error='请输入水印内容'), 400
-
-    password = request.form.get('password', '1').strip()
+    """Embed the historical Web format for backwards-compatible clients."""
     try:
-        password = int(password)
-    except ValueError:
-        password = 1
+        image = read_uploaded_image()
+        watermark = request.form.get("watermark", "")
+        if not watermark.strip():
+            raise ApiInputError("请输入水印内容", "WATERMARK_REQUIRED")
+        try:
+            watermark_bytes = watermark.encode("ascii", errors="strict")
+        except UnicodeEncodeError as exc:
+            raise ApiInputError(
+                "旧版 Web 格式仅支持 ASCII；中文和 Emoji 请使用页面中的 BWM2 新版",
+                "WATERMARK_ENCODING_UNSUPPORTED",
+            ) from exc
+        if len(watermark_bytes) > MAX_WATERMARK_BYTES:
+            raise ApiInputError("旧版水印内容不能超过 512 字节", "WATERMARK_TOO_LONG")
+        password = parse_legacy_password(request.form.get("password"))
 
-    # 读取图片
-    img_bytes = file.read()
-    img = read_image_from_bytes(img_bytes)
-    if img is None:
-        return jsonify(error='图片读取失败，请检查文件'), 400
+        if request.form.get("compress", "1") == "1":
+            height, width = image.shape[:2]
+            if max(height, width) > 1600:
+                scale = 1600 / max(height, width)
+                image = cv2.resize(
+                    image,
+                    (max(1, round(width * scale)), max(1, round(height * scale))),
+                    interpolation=cv2.INTER_AREA,
+                )
 
-    # 压缩大图（默认开启）
-    compress = request.form.get('compress', '1')
-    if compress == '1':
-        h, w = img.shape[:2]
-        max_dim = 1024
-        if max(h, w) > max_dim:
-            scale = max_dim / max(h, w)
-            new_w, new_h = int(w * scale), int(h * scale)
-            img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-    # 嵌入水印
-    try:
-        bwm = WaterMark(password_wm=password, password_img=password)
-        bwm.read_img(img=img)
-        bwm.read_wm(watermark, mode='str')
-        result = bwm.embed()
-        wm_len = bwm.wm_size
-    except Exception as e:
-        return jsonify(error=f'嵌入失败: {str(e)}'), 500
-
-    # 返回图片 + wm_size
-    import base64
-    buf = image_to_bytes(result, '.png')
-    img_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
-    return jsonify(image=img_b64, wm_size=wm_len)
+        engine = WaterMark(password_wm=password, password_img=password)
+        engine.read_img(img=image)
+        engine.read_wm(watermark, mode="str")
+        result = engine.embed()
+        image_base64 = base64.b64encode(encode_png(result)).decode("ascii")
+        return jsonify(
+            image=image_base64,
+            wm_size=engine.wm_size,
+            algorithm="python-blind-watermark-v1",
+            warning="旧版格式不含完整性校验，建议迁移到 BWM2",
+        )
+    except RequestEntityTooLarge:
+        raise
+    except ApiInputError as error:
+        return api_error(str(error), 422, error.code)
+    except Exception:
+        request_id = uuid.uuid4().hex[:12]
+        app.logger.exception("Legacy embed failed request_id=%s", request_id)
+        return api_error("嵌入失败，请检查图片和参数", 500, "PROCESSING_FAILED", request_id)
 
 
-@app.route('/api/extract', methods=['POST'])
+@app.post("/api/extract")
 def api_extract():
-    """提取水印"""
-    if 'image' not in request.files:
-        return jsonify(error='请上传图片'), 400
-
-    file = request.files['image']
-    if file.filename == '' or not allowed_file(file.filename):
-        return jsonify(error='请上传有效的图片文件'), 400
-
-    wm_length = request.form.get('wm_length', '').strip()
-    if not wm_length:
-        return jsonify(error='请输入水印长度（嵌入时显示的 bit 数）'), 400
+    """Extract the historical Web format for backwards-compatible clients."""
     try:
-        wm_length = int(wm_length)
-    except ValueError:
-        return jsonify(error='水印长度必须为整数'), 400
+        image = read_uploaded_image()
+        raw_length = request.form.get("wm_length", "")
+        if not raw_length.isascii() or not raw_length.isdecimal():
+            raise ApiInputError("水印长度必须是正整数", "WATERMARK_LENGTH_INVALID")
+        watermark_length = int(raw_length)
+        if watermark_length <= 0 or watermark_length > MAX_LEGACY_WATERMARK_BITS:
+            raise ApiInputError("水印长度超出允许范围", "WATERMARK_LENGTH_INVALID")
+        password = parse_legacy_password(request.form.get("password"))
 
-    password = request.form.get('password', '1').strip()
-    try:
-        password = int(password)
-    except ValueError:
-        password = 1
+        engine = WaterMark(password_wm=password, password_img=password)
+        result = engine.extract(
+            embed_img=image,
+            wm_shape=watermark_length,
+            mode="str",
+        )
+        return jsonify(
+            watermark=result,
+            wm_length=watermark_length,
+            algorithm="python-blind-watermark-v1",
+            verified=False,
+            warning="旧版格式无法校验密码和内容是否正确",
+        )
+    except RequestEntityTooLarge:
+        raise
+    except ApiInputError as error:
+        return api_error(str(error), 422, error.code)
+    except Exception:
+        request_id = uuid.uuid4().hex[:12]
+        app.logger.exception("Legacy extract failed request_id=%s", request_id)
+        return api_error("提取失败，请检查图片、密码和水印长度", 422, "EXTRACTION_FAILED", request_id)
 
-    # 读取图片
-    img_bytes = file.read()
-    img = read_image_from_bytes(img_bytes)
-    if img is None:
-        return jsonify(error='图片读取失败'), 400
 
-    # 提取水印
-    try:
-        bwm = WaterMark(password_wm=password, password_img=password)
-        result = bwm.extract(embed_img=img, wm_shape=wm_length, mode='str')
-    except Exception as e:
-        return jsonify(error=f'提取失败: {str(e)}'), 500
-
-    return jsonify(watermark=result, wm_length=wm_length)
+@app.errorhandler(RequestEntityTooLarge)
+def handle_too_large(_error):
+    if request.path.startswith("/api/"):
+        return api_error("图片不能超过 20 MB", 413, "FILE_SIZE_EXCEEDED")
+    return "Request too large", 413
 
 
-# ─── 启动 ───────────────────────────────────────────────
+@app.after_request
+def add_response_headers(response):
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+        "form-action 'self'; img-src 'self' data: blob:; style-src 'self'; "
+        "script-src 'self'; worker-src 'self'; connect-src 'self'"
+    )
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    elif request.path == "/":
+        response.headers["Cache-Control"] = "no-cache"
+    else:
+        response.headers.setdefault("Cache-Control", "public, max-age=3600")
+    if request.is_secure or request.headers.get("X-Forwarded-Proto") == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000"
+    return response
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5000"))
+    debug = os.environ.get("FLASK_DEBUG", "0") == "1"
+    host = os.environ.get("HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=debug, threaded=True)

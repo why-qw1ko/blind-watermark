@@ -8,15 +8,13 @@
   "features": [
     {
       "code": "blind-watermark",
-      "explain": "盲水印工具 - 在图片中嵌入和提取不可见水印",
+      "explain": "本地批量嵌入和提取图片盲水印",
       "cmds": [
+        "盲水印",
+        "blind-watermark",
         {
-          "type": "text",
-          "label": "盲水印"
-        },
-        {
-          "type": "text",
-          "label": "blind-watermark"
+          "type": "files",
+          "label": "批量图片水印"
         }
       ]
     }
