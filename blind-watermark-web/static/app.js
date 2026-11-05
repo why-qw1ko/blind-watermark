@@ -8,7 +8,7 @@ const LIMITS = Object.freeze({
     maxExtractPixels: 12_000_000,
     maxTotalProcessedPixels: 26_000_000,
     maxDimension: 1600,
-    maxPayloadBytes: 4096,
+    maxPayloadBytes: 256,
     maxPasswordBytes: 128
 })
 
@@ -24,6 +24,18 @@ function createElement (tag, className, text) {
 
 function replaceChildren (element, ...children) {
     element.replaceChildren(...children.filter(Boolean))
+}
+
+function createFilename (filename) {
+    const name = createElement('strong', 'filename')
+    const characters = Array.from(filename)
+    const split = Math.max(0, characters.length - 12)
+    name.title = filename
+    name.append(
+        createElement('span', 'filename-start', characters.slice(0, split).join('')),
+        createElement('span', 'filename-end', characters.slice(split).join(''))
+    )
+    return name
 }
 
 function extensionOf (filename) {
@@ -78,17 +90,14 @@ function createQueue (prefix) {
 
         const rows = items.map((item, index) => {
             const row = createElement('li', 'file-row')
-            const icon = createElement('span', 'file-icon', '▧')
-            icon.setAttribute('aria-hidden', 'true')
             const name = createElement('span', 'file-name')
-            const strong = createElement('strong', '', item.file.name)
-            strong.title = item.file.name
+            const strong = createFilename(item.file.name)
             const detail = item.error
                 ? `${formatBytes(item.file.size)} · ${item.error}`
                 : formatBytes(item.file.size)
             name.append(strong, createElement('small', '', detail))
             const status = createElement('span', `status-pill is-${item.status}`, statusLabel(item.status))
-            const remove = createElement('button', 'remove-button', '×')
+            const remove = createElement('button', 'remove-button', '移除')
             remove.type = 'button'
             remove.disabled = locked
             remove.setAttribute('aria-label', `移除 ${item.file.name}`)
@@ -97,14 +106,14 @@ function createQueue (prefix) {
                 error.textContent = ''
                 render()
             })
-            row.append(icon, name, status, remove)
+            row.append(name, status, remove)
             return row
         })
         replaceChildren(list, ...rows)
     }
 
     function addFiles (files) {
-        if (locked) return
+        if (locked) return false
         error.textContent = ''
         let rejected = 0
         let duplicates = 0
@@ -133,6 +142,7 @@ function createQueue (prefix) {
         else if (duplicates) error.textContent = `${duplicates} 个重复文件未再次添加`
         input.value = ''
         render()
+        return true
     }
 
     function clear () {
@@ -162,22 +172,47 @@ function createQueue (prefix) {
         render()
     }
 
+    let dragDepth = 0
+    let dragAnimation
+    function setDragging (dragging) {
+        if (dropzone.classList.contains('is-dragging') === dragging) return
+        const transform = getComputedStyle(dropzone).transform
+        const currentScale = transform === 'none' ? 1 : new DOMMatrixReadOnly(transform).a
+        dragAnimation?.cancel()
+        dropzone.classList.toggle('is-dragging', dragging)
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !dropzone.animate) return
+        const targetScale = dragging ? 0.995 : 1
+        // Unit mass, stiffness 1200, damping 80: overdamped and without overshoot.
+        const frames = Array.from({ length: 25 }, (_, index) => {
+            const t = index / 24 * 0.4
+            const progress = 1 - 1.5 * Math.exp(-20 * t) + 0.5 * Math.exp(-60 * t)
+            const scale = currentScale + (targetScale - currentScale) * progress
+            return { transform: `scale(${scale})`, offset: index / 24 }
+        })
+        dragAnimation = dropzone.animate(frames, { duration: 400 })
+    }
+
     input.addEventListener('change', () => addFiles(input.files))
     clearButton.addEventListener('click', clear)
     dropzone.addEventListener('dragenter', event => {
         event.preventDefault()
-        if (!locked) dropzone.classList.add('is-dragging')
+        dragDepth++
+        if (!locked) setDragging(true)
     })
     dropzone.addEventListener('dragover', event => event.preventDefault())
-    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('is-dragging'))
+    dropzone.addEventListener('dragleave', () => {
+        dragDepth = Math.max(0, dragDepth - 1)
+        if (!dragDepth) setDragging(false)
+    })
     dropzone.addEventListener('drop', event => {
         event.preventDefault()
-        dropzone.classList.remove('is-dragging')
+        dragDepth = 0
+        setDragging(false)
         addFiles(event.dataTransfer.files)
     })
 
     render()
-    return { items, resetStatuses, setStatus, setLocked }
+    return { items, addFiles, resetStatuses, setStatus, setLocked }
 }
 
 function createWorkerClient () {
@@ -431,8 +466,7 @@ function renderEmbedResults (region, results, download) {
     for (const result of results) {
         const row = createElement('li')
         const title = createElement('div', 'result-title')
-        const name = createElement('strong', '', result.name)
-        name.title = result.name
+        const name = createFilename(result.name)
         const status = createElement('span', result.success ? '' : 'is-failed', result.success ? '已校验' : '失败')
         title.append(name, status)
         row.append(title)
@@ -453,8 +487,9 @@ async function copyText (text) {
         textarea.setAttribute('readonly', '')
         document.body.append(textarea)
         textarea.select()
-        document.execCommand('copy')
+        const copied = document.execCommand('copy')
         textarea.remove()
+        if (!copied) throw new Error('复制失败')
     }
 }
 
@@ -492,8 +527,16 @@ function renderExtractResults (region, results) {
     const copyButton = createElement('button', 'secondary-button', '复制成功项')
     copyButton.type = 'button'
     copyButton.disabled = successes.length === 0
-    copyButton.addEventListener('click', () => {
-        copyText(successes.map(result => `${result.name}\t${result.watermark}`).join('\n'))
+    let copyFeedbackTimer
+    copyButton.addEventListener('click', async () => {
+        window.clearTimeout(copyFeedbackTimer)
+        try {
+            await copyText(successes.map(result => `${result.name}\t${result.watermark}`).join('\n'))
+            copyButton.textContent = '✓ 已复制'
+        } catch {
+            copyButton.textContent = '复制失败，请手动复制'
+        }
+        copyFeedbackTimer = window.setTimeout(() => { copyButton.textContent = '复制成功项' }, 2500)
     })
     const csvButton = createElement('button', 'secondary-button', '下载 CSV')
     csvButton.type = 'button'
@@ -508,8 +551,7 @@ function renderExtractResults (region, results) {
     for (const result of results) {
         const row = createElement('li')
         const title = createElement('div', 'result-title')
-        const name = createElement('strong', '', result.name)
-        name.title = result.name
+        const name = createFilename(result.name)
         const statusText = result.success ? (result.verified ? '已校验' : '未校验') : '失败'
         title.append(name, createElement('span', result.success ? '' : 'is-failed', statusText))
         row.append(title)
@@ -583,13 +625,36 @@ function setupPasswordToggles () {
             const input = document.getElementById(button.dataset.togglePassword)
             const showing = input.type === 'text'
             input.type = showing ? 'password' : 'text'
-            button.textContent = showing ? '显示' : '隐藏'
+            button.setAttribute('aria-pressed', String(!showing))
+            button.setAttribute('aria-label', showing ? '显示提取密码' : '隐藏提取密码')
         })
     })
 }
 
 const embedQueue = createQueue('embed')
 const extractQueue = createQueue('extract')
+
+document.addEventListener('paste', event => {
+    if (document.getElementById('workspace').hidden) return
+    if (event.target?.closest?.('input:not([type="file"]), textarea, [contenteditable]:not([contenteditable="false"])')) return
+
+    const imageExtensions = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/bmp': 'bmp', 'image/webp': 'webp' }
+    const files = Array.from(event.clipboardData?.files || [])
+        .filter(file => file.type.startsWith('image/'))
+        .map((file, index) => {
+            const extension = imageExtensions[file.type]
+            if (extension && ALLOWED_EXTENSIONS.has(extensionOf(file.name))) return file
+            return new File([file], `粘贴图片-${Date.now()}-${index + 1}.${extension || 'unsupported'}`, {
+                type: file.type,
+                lastModified: file.lastModified
+            })
+        })
+    if (!files.length) return
+
+    const queue = document.getElementById('embed-tab').getAttribute('aria-selected') === 'true' ? embedQueue : extractQueue
+    if (queue.addFiles(files)) event.preventDefault()
+})
+
 let runWorker
 try {
     runWorker = createWorkerClient()
@@ -601,6 +666,34 @@ try {
 setupTabs()
 setupPasswordToggles()
 
+// Prevent an IME confirmation Enter from submitting a form.
+document.querySelectorAll('form').forEach(form => {
+    let compositionEndedAt = -Infinity
+    let composing = false
+    let imeEnter = false
+    form.addEventListener('compositionstart', () => { composing = true })
+    form.addEventListener('compositionend', () => {
+        composing = false
+        compositionEndedAt = performance.now()
+    })
+    form.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.keyCode !== 229) return
+        // Let the IME consume Enter; the submit handler still protects the form.
+        if (event.isComposing || event.keyCode === 229 || composing) {
+            imeEnter = true
+            window.setTimeout(() => { imeEnter = false }, 0)
+            return
+        }
+        if (performance.now() - compositionEndedAt < 500) event.preventDefault()
+    })
+    form.addEventListener('submit', event => {
+        if (composing || imeEnter) {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+        }
+    }, true)
+})
+
 const watermarkInput = document.getElementById('watermark')
 const watermarkCount = document.getElementById('watermark-count')
 watermarkInput.addEventListener('input', () => {
@@ -609,31 +702,36 @@ watermarkInput.addEventListener('input', () => {
     watermarkCount.classList.toggle('is-over', length > LIMITS.maxPayloadBytes)
 })
 
-const extractMode = document.getElementById('extract-mode')
+const extractModes = document.querySelectorAll('input[name="extract-mode"]')
+const selectedExtractMode = () => document.querySelector('input[name="extract-mode"]:checked').value
 const legacyLengthField = document.getElementById('legacy-length-field')
 const legacyLength = document.getElementById('legacy-length')
 const legacyWarning = document.getElementById('legacy-warning')
 const extractPrivacy = document.getElementById('extract-privacy')
 
 function updateExtractMode () {
-    const isLegacy = extractMode.value !== 'auto'
+    const mode = selectedExtractMode()
+    const isLegacy = mode !== 'auto'
     legacyLengthField.hidden = !isLegacy
-    legacyLength.step = extractMode.value === 'legacy-utools' ? '56' : '1'
-    legacyLength.min = extractMode.value === 'legacy-utools' ? '56' : '1'
+    legacyLength.step = mode === 'legacy-utools' ? '56' : '1'
+    legacyLength.min = mode === 'legacy-utools' ? '56' : '1'
     legacyWarning.hidden = !isLegacy
-    if (extractMode.value === 'legacy-web') {
+    if (mode === 'legacy-web') {
         legacyWarning.textContent = '旧版 Web 算法只能由服务器兼容提取。所选图片会上传到当前站点，请仅在 HTTPS 和可信部署上使用。结果无法校验真伪。'
-        extractPrivacy.textContent = '兼容模式：旧版 Web 图片会上传到当前服务器。'
-    } else if (extractMode.value === 'legacy-utools') {
+        extractPrivacy.hidden = false
+        extractPrivacy.textContent = '旧版 Web 模式会上传图片。'
+    } else if (mode === 'legacy-utools') {
         legacyWarning.textContent = '旧版 uTools 格式没有自动长度和完整性校验，提取内容仅作为候选结果。'
-        extractPrivacy.textContent = '全程本地：旧版 uTools 图片不会上传。'
+        extractPrivacy.hidden = true
+        extractPrivacy.textContent = ''
     } else {
         legacyWarning.textContent = ''
-        extractPrivacy.textContent = '全程本地：新版图片不会上传。'
+        extractPrivacy.hidden = true
+        extractPrivacy.textContent = ''
     }
 }
 
-extractMode.addEventListener('change', updateExtractMode)
+extractModes.forEach(input => input.addEventListener('change', updateExtractMode))
 updateExtractMode()
 
 document.getElementById('embed-form').addEventListener('submit', async event => {
@@ -651,7 +749,7 @@ document.getElementById('embed-form').addEventListener('submit', async event => 
         return
     }
     if (!text.trim() || textBytes > LIMITS.maxPayloadBytes) {
-        renderEmbedResults(region, [{ name: '水印内容', success: false, error: textBytes ? '水印内容不能超过 4096 字节' : '请输入水印内容' }], null)
+        renderEmbedResults(region, [{ name: '水印内容', success: false, error: text.trim() ? `水印内容不能超过 ${LIMITS.maxPayloadBytes} 字节` : '请输入水印内容' }], null)
         return
     }
     if (!password || passwordBytes > LIMITS.maxPasswordBytes) {
@@ -751,7 +849,7 @@ document.getElementById('extract-form').addEventListener('submit', async event =
     event.preventDefault()
     const region = document.getElementById('extract-result')
     const submit = document.getElementById('extract-submit')
-    const mode = extractMode.value
+    const mode = selectedExtractMode()
     const password = document.getElementById('extract-password').value
     const passwordBytes = textEncoder.encode(password).length
     const lengthText = legacyLength.value
@@ -838,3 +936,67 @@ document.getElementById('extract-form').addEventListener('submit', async event =
         extractQueue.setLocked(false)
     }
 })
+
+
+// Keep the workspace alive while help is open in this tab.
+function setupPageNavigation () {
+    const main = document.getElementById('main')
+    const workspaceSections = Array.from(main.children)
+    const [workspaceLink, helpLink] = document.querySelectorAll('.header-nav a')
+    const brandLink = document.querySelector('.brand')
+    let helpSection = null
+    let navigationId = 0
+
+    async function showPage (page, push) {
+        const id = ++navigationId
+        try {
+            if (page === 'help' && !helpSection) {
+                const response = await fetch(helpLink.href)
+                if (!response.ok) throw new Error('Unable to load help')
+                const html = await response.text()
+                const section = new DOMParser().parseFromString(html, 'text/html').querySelector('#faq')
+                if (!section) throw new Error('Help content missing')
+                if (id !== navigationId) return
+                helpSection = section
+                helpSection.querySelectorAll('.faq-toggle').forEach(button => {
+                    button.addEventListener('click', () => {
+                        const expanded = button.getAttribute('aria-expanded') === 'true'
+                        button.setAttribute('aria-expanded', String(!expanded))
+                        document.getElementById(button.getAttribute('aria-controls')).inert = expanded
+                    })
+                })
+                main.append(helpSection)
+            }
+            if (id !== navigationId) return
+            workspaceSections.forEach(section => { section.hidden = page === 'help' })
+            if (helpSection) helpSection.hidden = page !== 'help'
+            workspaceLink.toggleAttribute('aria-current', page === 'workspace')
+            helpLink.toggleAttribute('aria-current', page === 'help')
+            if (page === 'workspace') workspaceLink.setAttribute('aria-current', 'page')
+            else helpLink.setAttribute('aria-current', 'page')
+            document.title = `${page === 'help' ? '使用帮助' : '图片盲水印'} · 本地图片处理`
+            if (push) history.pushState(null, '', page === 'help' ? helpLink.href : workspaceLink.href)
+            const heading = main.querySelector(page === 'help' ? '#faq-title' : '#workspace-title')
+            heading.setAttribute('tabindex', '-1')
+            heading.focus({ preventScroll: true })
+            window.scrollTo(0, 0)
+        } catch {
+            if (id === navigationId) window.location.assign(page === 'help' ? helpLink.href : workspaceLink.href)
+        }
+    }
+
+    for (const [link, page] of [[workspaceLink, 'workspace'], [helpLink, 'help'], [brandLink, 'workspace']]) {
+        link.addEventListener('click', event => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            const current = window.location.pathname === new URL(helpLink.href).pathname ? 'help' : 'workspace'
+            if (current !== page) showPage(page, true)
+            else navigationId++
+        })
+    }
+    window.addEventListener('popstate', () => {
+        showPage(window.location.pathname === new URL(helpLink.href).pathname ? 'help' : 'workspace', false)
+    })
+}
+
+setupPageNavigation()

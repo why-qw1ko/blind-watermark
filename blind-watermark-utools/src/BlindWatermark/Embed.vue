@@ -20,7 +20,7 @@ const {
 
 const watermark = ref('')
 const password = ref('1')
-const showPassword = ref(false)
+const showPassword = ref(true)
 const resize = ref(true)
 const outputDirectory = ref(config.downloadsDirectory)
 const processing = ref(false)
@@ -79,12 +79,13 @@ function revealResults () {
 </script>
 
 <template>
-  <form class="wm-workspace" @submit.prevent="handleEmbed">
+  <form class="wm-workspace wm-workspace-embed" @submit.prevent="handleEmbed">
     <FileQueue
       :items="items"
       :error="queueError"
       :max-files="config.maxBatchFiles"
       :total-size="totalSize"
+      description="选择要添加水印的图片"
       :disabled="processing"
       @choose="chooseFiles"
       @drop="addFiles"
@@ -93,6 +94,10 @@ function revealResults () {
     />
 
     <div class="wm-form-grid">
+      <div class="wm-section-heading wm-field-wide">
+        <span class="wm-step">02</span>
+        <div><h2>设置水印</h2><p>请牢记你的密码</p></div>
+      </div>
       <div class="wm-field wm-field-wide">
         <div class="wm-label-row">
           <label for="embed-watermark">水印内容</label>
@@ -139,19 +144,21 @@ function revealResults () {
       </span>
     </label>
 
-    <button type="submit" class="wm-primary-button" :disabled="processing || !items.length">
-      <span v-if="processing" class="wm-spinner" aria-hidden="true"></span>
-      {{ processing ? '正在逐张处理…' : `嵌入水印${items.length ? `（${items.length} 张）` : ''}` }}
-    </button>
+    <div class="wm-submit-row">
+      <button type="submit" class="wm-primary-button" :disabled="processing || !items.length">
+        <span v-if="processing" class="wm-spinner" aria-hidden="true"></span>
+        {{ processing ? '正在逐张处理…' : `嵌入水印${items.length ? `（${items.length} 张）` : ''}` }}
+      </button>
+    </div>
 
     <p v-if="error" class="wm-callout is-error" role="alert">{{ error }}</p>
 
-    <section v-if="batchResult" class="wm-result-card" aria-live="polite">
+    <section v-if="batchResult" class="wm-result-card" :class="{ 'is-error': !successCount }" aria-live="polite">
       <div>
-        <span class="wm-result-mark" aria-hidden="true">✓</span>
+        <span class="wm-result-mark" aria-hidden="true">{{ successCount ? '✓' : '×' }}</span>
         <div>
-          <h2>处理完成</h2>
-          <p>{{ successCount }} 张成功<template v-if="failureCount">，{{ failureCount }} 张失败</template>。新版图片可在 Web 与 uTools 间直接互提。</p>
+          <h2>{{ successCount ? '处理完成' : '处理失败' }}</h2>
+          <p>{{ successCount }} 张成功<template v-if="failureCount">，{{ failureCount }} 张失败</template>。<template v-if="successCount">新版图片可在 Web 与 uTools 间直接互提。</template></p>
         </div>
       </div>
       <button v-if="successCount" type="button" class="wm-secondary-button" @click="revealResults">在文件夹中显示</button>

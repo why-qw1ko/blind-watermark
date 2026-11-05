@@ -18,7 +18,7 @@ const {
 } = useImageQueue('extract')
 
 const password = ref('1')
-const showPassword = ref(false)
+const showPassword = ref(true)
 const mode = ref('auto')
 const legacyLength = ref('')
 const processing = ref(false)
@@ -81,12 +81,13 @@ function revealExport () {
 </script>
 
 <template>
-  <form class="wm-workspace" @submit.prevent="handleExtract">
+  <form class="wm-workspace wm-workspace-extract" @submit.prevent="handleExtract">
     <FileQueue
       :items="items"
       :error="queueError"
       :max-files="config.maxBatchFiles"
       :total-size="totalSize"
+      description="选择需要提取水印的图片"
       :disabled="processing"
       @choose="chooseFiles"
       @drop="addFiles"
@@ -95,13 +96,17 @@ function revealExport () {
     />
 
     <div class="wm-form-grid">
-      <div class="wm-field">
-        <label for="extract-mode">图片格式</label>
-        <select id="extract-mode" v-model="mode" :disabled="processing">
-          <option value="auto">新版 BWM2（自动识别）</option>
-          <option value="legacy-utools">旧版 uTools（手填长度）</option>
-        </select>
+      <div class="wm-section-heading wm-field-wide">
+        <span class="wm-step">02</span>
+        <div><h2>提取设置</h2><p>使用嵌入时的格式与密码</p></div>
       </div>
+      <fieldset class="wm-mode-field">
+        <legend>图片来源</legend>
+        <div class="wm-mode-options">
+          <label class="wm-mode-option"><input v-model="mode" type="radio" name="extract-mode" value="auto" :disabled="processing"><span><strong>新版 BWM2</strong><small>自动读取并校验</small></span></label>
+          <label class="wm-mode-option"><input v-model="mode" type="radio" name="extract-mode" value="legacy-utools" :disabled="processing"><span><strong>旧版 uTools</strong><small>需要填写长度</small></span></label>
+        </div>
+      </fieldset>
 
       <div class="wm-field">
         <label for="extract-password">密码</label>
@@ -134,10 +139,12 @@ function revealExport () {
       </div>
     </div>
 
-    <button type="submit" class="wm-primary-button" :disabled="processing || !items.length">
-      <span v-if="processing" class="wm-spinner" aria-hidden="true"></span>
-      {{ processing ? '正在逐张提取…' : `提取水印${items.length ? `（${items.length} 张）` : ''}` }}
-    </button>
+    <div class="wm-submit-row">
+      <button type="submit" class="wm-primary-button" :disabled="processing || !items.length">
+        <span v-if="processing" class="wm-spinner" aria-hidden="true"></span>
+        {{ processing ? '正在逐张提取…' : `提取水印${items.length ? `（${items.length} 张）` : ''}` }}
+      </button>
+    </div>
 
     <p v-if="error" class="wm-callout is-error" role="alert">{{ error }}</p>
 

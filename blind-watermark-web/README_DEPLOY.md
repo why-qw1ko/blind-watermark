@@ -50,7 +50,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-默认仅监听 `127.0.0.1:5000` 且关闭调试。需要调试时显式设置 `FLASK_DEBUG=1`，不要在公网环境开启。
+默认仅监听 `127.0.0.1:5010` 且关闭调试。需要调试时显式设置 `FLASK_DEBUG=1`，不要在公网环境开启。
 
 ## 验证
 

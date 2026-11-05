@@ -86,29 +86,62 @@ test('legacy password stream remains compatible', () => {
   )
 })
 
-test('uTools worker performs BWM2 work off the renderer thread', async () => {
+test('uTools browser worker supports BWM2, legacy and error responses', async () => {
   const workerPath = path.resolve(__dirname, '../blind-watermark-utools/public/preload/watermark-worker.js')
-  const worker = new Worker(workerPath)
+  const corePath = path.resolve(__dirname, 'watermark-core.js')
+  // Provide the browser worker APIs in a real worker thread for this protocol test.
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads')
+    const fs = require('node:fs')
+    const vm = require('node:vm')
+    global.self = globalThis
+    global.importScripts = () => vm.runInThisContext(fs.readFileSync(workerData.corePath, 'utf8'))
+    self.addEventListener = (type, callback) => {
+      if (type === 'message') parentPort.on('message', data => callback({ data }))
+    }
+    self.postMessage = (data, transfer) => parentPort.postMessage(data, transfer)
+    vm.runInThisContext(fs.readFileSync(workerData.workerPath, 'utf8'))
+  `, { eval: true, workerData: { workerPath, corePath } })
+  let id = 0
+  const run = payload => new Promise((resolve, reject) => {
+    worker.once('error', reject)
+    worker.once('message', resolve)
+    worker.postMessage({ id: ++id, ...payload }, payload.rgba ? [payload.rgba] : [])
+  })
   const image = fixture()
   try {
-    const response = await new Promise((resolve, reject) => {
-      worker.once('error', reject)
-      worker.once('message', resolve)
-      worker.postMessage({
-        id: 1,
-        action: 'embed',
-        rgba: image.rgba.buffer,
-        width: image.width,
-        height: image.height,
-        text: 'worker ok',
-        password: '1'
-      }, [image.rgba.buffer])
+    const embedded = await run({
+      action: 'embed', rgba: image.rgba.buffer, width: image.width, height: image.height,
+      text: 'worker ok', password: '1'
     })
-    assert.equal(response.ok, true)
-    assert.equal(
-      core.extractText(new Uint8Array(response.rgba), response.width, response.height, '1'),
-      'worker ok'
-    )
+    assert.equal(embedded.ok, true)
+    assert.equal(core.extractText(new Uint8Array(embedded.rgba), image.width, image.height, '1'), 'worker ok')
+    const extracted = await run({
+      action: 'extract', rgba: embedded.rgba, width: image.width, height: image.height, password: '1'
+    })
+    assert.equal(extracted.watermark, 'worker ok')
+    assert.equal(extracted.verified, true)
+
+    const legacyImage = fixture()
+    const legacy = await run({
+      action: 'embed-legacy', rgba: legacyImage.rgba.buffer, width: image.width, height: image.height,
+      text: 'legacy', password: '1'
+    })
+    assert.equal(legacy.verified, 'legacy')
+    const legacyResult = await run({
+      action: 'extract-legacy', rgba: legacy.rgba, width: image.width, height: image.height,
+      legacyLength: legacy.encodedBits, password: '1'
+    })
+    assert.equal(legacyResult.watermark, 'legacy')
+    assert.equal(legacyResult.verified, false)
+
+    const tiny = fixture(32, 32)
+    const failure = await run({
+      action: 'embed', rgba: tiny.rgba.buffer, width: tiny.width, height: tiny.height,
+      text: 'too large', password: '1'
+    })
+    assert.equal(failure.ok, false)
+    assert.equal(failure.error.code, 'CAPACITY_EXCEEDED')
   } finally {
     await worker.terminate()
   }

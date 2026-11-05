@@ -1,9 +1,10 @@
 'use strict'
 
-const { parentPort } = require('node:worker_threads')
-const watermarkCore = require('./watermark-core.js')
+importScripts('./watermark-core.js')
+const watermarkCore = self.BlindWatermarkCore
 
-parentPort.on('message', message => {
+self.addEventListener('message', event => {
+  const message = event.data
   const { id, action, rgba, width, height, text, password, legacyLength } = message
   try {
     const pixels = new Uint8Array(rgba)
@@ -11,7 +12,7 @@ parentPort.on('message', message => {
       const embedded = watermarkCore.embedText(pixels, width, height, text, password)
       const verified = watermarkCore.extractText(embedded.rgba, width, height, password)
       if (verified !== text) throw new watermarkCore.IntegrityError('嵌入自检失败，未保存不可靠的结果')
-      parentPort.postMessage({
+      self.postMessage({
         id,
         ok: true,
         rgba: embedded.rgba.buffer,
@@ -33,7 +34,7 @@ parentPort.on('message', message => {
         embedded.encodedBits,
         password
       )
-      parentPort.postMessage({
+      self.postMessage({
         id,
         ok: true,
         rgba: embedded.rgba.buffer,
@@ -50,7 +51,7 @@ parentPort.on('message', message => {
     const watermark = action === 'extract-legacy'
       ? watermarkCore.extractLegacyText(pixels, width, height, legacyLength, password)
       : watermarkCore.extractText(pixels, width, height, password)
-    parentPort.postMessage({
+    self.postMessage({
       id,
       ok: true,
       watermark,
@@ -58,7 +59,7 @@ parentPort.on('message', message => {
       verified: action !== 'extract-legacy'
     })
   } catch (error) {
-    parentPort.postMessage({
+    self.postMessage({
       id,
       ok: false,
       error: {

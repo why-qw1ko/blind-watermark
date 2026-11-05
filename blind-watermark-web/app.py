@@ -105,7 +105,12 @@ def encode_png(image: np.ndarray) -> bytes:
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", page="workspace")
+
+
+@app.get("/help")
+def help_page():
+    return render_template("index.html", page="help")
 
 
 @app.get("/shared/watermark-core.js")
@@ -224,7 +229,7 @@ def add_response_headers(response):
     )
     if request.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
-    elif request.path == "/":
+    elif request.path in {"/", "/help"}:
         response.headers["Cache-Control"] = "no-cache"
     else:
         response.headers.setdefault("Cache-Control", "public, max-age=3600")
@@ -234,7 +239,7 @@ def add_response_headers(response):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "5010"))
     debug = os.environ.get("FLASK_DEBUG", "0") == "1"
     host = os.environ.get("HOST", "127.0.0.1")
     app.run(host=host, port=port, debug=debug, threaded=True)

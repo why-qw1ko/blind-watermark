@@ -4,7 +4,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
-const { Worker } = require('node:worker_threads')
 const watermarkCore = require('./watermark-core.js')
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024
@@ -227,12 +226,21 @@ function notifyProgress (callback, update) {
 }
 
 function createCoreWorker () {
-  const worker = new Worker(path.join(__dirname, 'watermark-worker.js'))
+  const workerUrl = new URL('./preload/watermark-worker.js', window.location.href)
+  const worker = new window.Worker(workerUrl)
   const pending = new Map()
   let requestId = 0
   let closed = false
+  let failure = null
 
-  worker.on('message', message => {
+  function failPending (error) {
+    failure = error
+    for (const handler of pending.values()) handler.reject(error)
+    pending.clear()
+  }
+
+  worker.addEventListener('message', event => {
+    const message = event.data
     const handler = pending.get(message.id)
     if (!handler) return
     pending.delete(message.id)
@@ -245,29 +253,31 @@ function createCoreWorker () {
       message.error?.code || 'PROCESSING_FAILED'
     ))
   })
-  worker.on('error', error => {
-    for (const handler of pending.values()) handler.reject(error)
-    pending.clear()
+  worker.addEventListener('error', () => {
+    failPending(new Error('图片处理线程启动或运行失败'))
   })
-  worker.on('exit', code => {
-    if (!closed && code !== 0) {
-      const error = new Error('图片处理线程异常退出')
-      for (const handler of pending.values()) handler.reject(error)
-      pending.clear()
-    }
+  worker.addEventListener('messageerror', () => {
+    failPending(new Error('图片处理线程通信失败'))
   })
 
   return {
     run (payload, transferable = []) {
+      if (closed || failure) return Promise.reject(failure || new Error('图片处理线程已关闭'))
       return new Promise((resolve, reject) => {
         const id = ++requestId
         pending.set(id, { resolve, reject })
-        worker.postMessage({ id, ...payload }, transferable)
+        try {
+          worker.postMessage({ id, ...payload }, transferable)
+        } catch (error) {
+          pending.delete(id)
+          reject(error)
+        }
       })
     },
     async close () {
       closed = true
-      await worker.terminate()
+      worker.terminate()
+      failPending(new Error('图片处理线程已关闭'))
     }
   }
 }

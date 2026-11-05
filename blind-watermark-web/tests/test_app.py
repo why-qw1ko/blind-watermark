@@ -38,7 +38,7 @@ class WebAppTests(unittest.TestCase):
     def test_page_and_shared_core_are_served_with_security_headers(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("浏览器本地处理", response.get_data(as_text=True))
+        self.assertIn("图片盲水印", response.get_data(as_text=True))
         self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
         self.assertEqual(response.headers["X-Frame-Options"], "DENY")
 
@@ -46,6 +46,25 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(core_response.status_code, 200)
         self.assertIn("BWM2", core_response.get_data(as_text=True))
         core_response.close()
+
+    def test_workspace_and_help_are_separate_pages(self) -> None:
+        workspace = self.client.get("/")
+        help_response = self.client.get("/help")
+        self.assertEqual(workspace.status_code, 200)
+        self.assertEqual(help_response.status_code, 200)
+        self.assertEqual(help_response.headers["Cache-Control"], "no-cache")
+        workspace_html = workspace.get_data(as_text=True)
+        help_html = help_response.get_data(as_text=True)
+        self.assertIn('id="embed-form"', workspace_html)
+        self.assertNotIn('id="faq"', workspace_html)
+        self.assertIn('id="faq"', help_html)
+        self.assertNotIn('id="embed-form"', help_html)
+        self.assertIn('static/app.js', workspace_html)
+        self.assertNotIn('static/app.js', help_html)
+        self.assertIn('static/help.js', help_html)
+        self.assertIn('href="/help"', workspace_html)
+        self.assertNotIn('target="_blank"', workspace_html)
+        self.assertIn('href="/"', help_html)
 
     def test_health_check(self) -> None:
         response = self.client.get("/healthz")
